@@ -13,15 +13,13 @@ gc.enable()
 
 # Trigger carbage collection after 100000 bytes
 # of heap memory have been allocated
-gc.threshold(100000)
+# gc.threshold(100000)
 
 # **--------------------------------------------------**
 # Set Variables
 # **--------------------------------------------------**
 # Loop Counters
 core0_loop_n = 0
-global core1_loop_n
-core1_loop_n = 0
 alert_loop_n = 0
 
 # **--------------------------------------------------**
@@ -49,31 +47,18 @@ def matrix_blue():
             for y in range(uni_height):
                 uni.set_pixel(x, y, 0, 0, 50)
 
-def matrix_black():
-    for x in range(1, 16):
-            for y in range(uni_height):
-                uni.set_pixel(x, y, 0, 0, 0)
 
 # Define Thread Running Confirmation
 def thread_0_running_led():
     for x in range(0, 1):
-            for y in range(0, 2):
+            for y in range(0, 7):
                 uni.set_pixel(x, y, 50, 50, 50)
     time.sleep(0.5)
     for x in range(0, 1):
-            for y in range(0, 2):
+            for y in range(0, 7):
                 uni.set_pixel(x, y, 0, 0, 0)
     time.sleep(0.5)
-        
-def thread_1_running_led():
-    for x in range(0, 1):
-            for y in range(5, 7):
-                uni.set_pixel(x, y, 50, 50, 50)
-    time.sleep(0.5)
-    for x in range(0, 1):
-            for y in range(5, 7):
-                uni.set_pixel(x, y, 0, 0, 0)
-    time.sleep(0.5)
+
 
 # Define taking temperature notification
 def taking_temp_note():
@@ -97,7 +82,7 @@ conversion_factor = 3.3 / (65535)
 t_adjust = 3.1  
 
 # variables to set the upper and lower temperature limits
-t_hot = 23
+t_hot = 30
 t_cold = 18
 
 temperatures = []
@@ -105,16 +90,19 @@ temperatures = []
 # **--------------------------------------------------**
 # Define Buzzer and Mute Button
 # **--------------------------------------------------**
-# set up the piezzo buzzer
-buzzer = PWM(Pin(0))
-buzzer.freq(500)
+# set up the Siren buzzer
+buzzer = machine.Pin(28, machine.Pin.OUT)
+buzzer.value(0)
 
-# Add a button to mute the buzzer
-button = machine.Pin(28, machine.Pin.IN, machine.Pin.PULL_DOWN)
-
-global buzzer_mute
+# Add an interrupt button to mute the buzzer
 buzzer_mute = False
+mute_button = machine.Pin(27, machine.Pin.IN, machine.Pin.PULL_DOWN)
 
+def mute_handler(pin):
+    global buzzer_mute
+    if not buzzer_mute:
+        buzzer_mute = True
+ 
 # **--------------------------------------------------**
 # Define Console Print Info for Debugging
 # **--------------------------------------------------**
@@ -128,7 +116,6 @@ def status_print():
     print("Decimal temperature: " + str(temp_float))
     print("\n")
     print("Alert Count: " + str(alert_loop_n) + " Loops In Total")
-    print("Temp Alert Status: " + str(temp_alert))
     print("Buzzer Mute Status:" + str(buzzer_mute))
     print("\n")
     print("Free Memory: " + str(gc.mem_free()) + " bytes of available heap RAM")
@@ -137,51 +124,11 @@ def status_print():
     print("\n")
 
 # **--------------------------------------------------**
-# Define Alert Thread on Core 1
-# **--------------------------------------------------**
-global temp_alert
-temp_alert = False
-
-# Define a function for the alert thread on core 1
-def alert_thread():
-    global temp_alert
-    global buzzer_mute
-    global core1_loop_n
-    while True:
-        # Start counting the loops
-        core1_loop_n += 1
-
-        # Watch for mute button press
-        if button.value() == 1:
-            time.sleep(0.01)
-            buzzer_mute = True
-
-        # Visual and Audiable alert for over temperature
-        if temp_alert == True and buzzer_mute == False:
-            matrix_red()
-            buzzer.duty_u16(1000)
-            time.sleep(0.2)
-            matrix_black()
-            buzzer.duty_u16(0)
-            time.sleep(0.2)
-        
-        # Visual Only Alert (Buzzer Mute is Active)
-        elif temp_alert == True and buzzer_mute == True:
-            matrix_red()
-            time.sleep(0.2)
-            matrix_black()
-            time.sleep(0.2)
-
-        else:
-            # Toggle LED to Show Thread is running
-            thread_1_running_led()
-
-_thread.start_new_thread(alert_thread, ())
-
-# **--------------------------------------------------**
 # Main Program On Core 0
 # **--------------------------------------------------**
 while True:
+    mute_button.irq(trigger=machine.Pin.IRQ_RISING, handler=mute_handler)
+    
     # start counting the loops
     core0_loop_n += 1
 
@@ -195,21 +142,26 @@ while True:
     
     # set the temperature alert
     if temperature >= t_hot:
-        temp_alert = True
-        alert_loop_n += 1
+        if buzzer_mute == True:
+            buzzer.value(0)
+            matrix_red()
+
+        else:
+            buzzer.value(1)
+            matrix_red()
 
     else:
         if temperature > t_cold and temperature < t_hot:
-            temp_alert = False
+            buzzer.value(0)
             buzzer_mute = False
             matrix_green()
         else:
-            temp_alert = False
+            buzzer.value(0)
             buzzer_mute = False
             matrix_blue()
     
     status_print()
 
     # set the delay in seconds between temperature checks
-    for delay in range(30):
+    for delay in range(1):
         thread_0_running_led()
